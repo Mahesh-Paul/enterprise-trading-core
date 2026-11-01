@@ -1,0 +1,82 @@
+name: CI/CD Production Matching Engine Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+# ==============================================================================
+# BUG #2: INTENTIONALLY BROKEN ENVIRONMENT VARIABLE IN CI/CD PIPELINE
+# ==============================================================================
+# The CI/CD pipeline defines global operational environment variables for the
+# trading engine runtime and automated testing stages.
+#
+# Misconfiguration:
+# 1. ORDER_MATCHING_WORKERS is set to the invalid string "UNBOUNDED_MAX"
+#    instead of an integer [1-64].
+# 2. MATCHING_BATCH_TIMEOUT_MS is set to "-100" (negative timeout violates schema).
+# 3. When the pipeline contract check or test suite runs, the configuration loader
+#    raises a PipelineConfigurationError, intentionally failing the pipeline.
+# ==============================================================================
+env:
+  ENVIRONMENT: "staging"
+  PYTHON_VERSION: "3.11"
+  TRADING_SYMBOL_ALLOWLIST: "BTC-USD,ETH-USD,SOL-USD"
+  # INTENTIONAL BUG: Broken environment variables
+  ORDER_MATCHING_WORKERS: "UNBOUNDED_MAX"
+  MATCHING_BATCH_TIMEOUT_MS: "-100"
+  TRADING_ENGINE_AUTH_TOKEN: ${{ secrets.MISSING_PRODUCTION_SECRET }}
+
+jobs:
+  validate-and-test:
+    name: Test & Validate Matching Engine
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Codebase
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Pre-Flight Pipeline Environment Contract Check
+        run: |
+          echo "Running pre-flight environment variable validation..."
+          python -c "
+          import os, sys
+          workers = os.environ.get('ORDER_MATCHING_WORKERS', '')
+          if not workers.isdigit():
+              print(f'::error::[CI/CD ERROR] Broken environment variable ORDER_MATCHING_WORKERS={workers!r}. Expected integer >= 1.', file=sys.stderr)
+              sys.exit(1)
+          "
+
+      - name: Run Pipeline Trigger & Concurrency Test Suite
+        env:
+          ORDER_MATCHING_WORKERS: ${{ env.ORDER_MATCHING_WORKERS }}
+          MATCHING_BATCH_TIMEOUT_MS: ${{ env.MATCHING_BATCH_TIMEOUT_MS }}
+          ENVIRONMENT: ${{ env.ENVIRONMENT }}
+        run: |
+          pytest tests/test_pipeline.py -v
+
+  docker-build:
+    name: Build & Package Container Image
+    needs: validate-and-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Codebase
+        uses: actions/checkout@v4
+
+      - name: Build Docker Container
+        run: |
+          # Executes infra/Dockerfile which triggers Bug #1 (OOM Crash 137) during RUN phase
+          docker build -t matching-engine:latest -f infra/Dockerfile .
+
