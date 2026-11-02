@@ -1,4 +1,4 @@
-# DemoCrash: High-Frequency Trading (HFT) Matching Engine
+# enterprise-trading-core: High-Frequency Trading (HFT) Matching Engine
 
 A production-grade, asynchronous order matching engine repository engineered with **four interconnected, professional-grade architectural bugs** spanning containerization, CI/CD orchestration, asynchronous concurrency, and automated pipeline verification.
 
@@ -7,7 +7,7 @@ A production-grade, asynchronous order matching engine repository engineered wit
 ## 📁 Repository Architecture
 
 ```text
-DemoCrash/
+enterprise-trading-core/
 ├── .github/
 │   └── workflows/
 │       └── build.yml               # [BUG #2] CI/CD pipeline with broken environment variable
@@ -57,7 +57,7 @@ DemoCrash/
                                                                │   Yields execution to event loop               │
                                                                │   (`await _async_settle_match`) before state   │
                                                                │   decrement -> Phantom shares & Double-Spend   │
-                                                               └────────────────────────────────────────────────┘
+                                                               │   └────────────────────────────────────────────────┘
 ```
 
 ---
@@ -186,4 +186,3 @@ pytest -v tests/test_pipeline.py
 docker build -t matching-engine:latest -f infra/Dockerfile .
 ```
 *(Terminates with exit code 137 / SIGKILL)*
-
